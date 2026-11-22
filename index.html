@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MCGuard Replay Viewer</title>
+<style>
+:root{--bg:#10141c;--p:#1a2030;--b:#2b3348;--t:#e6e9f2;--m:#8e98b3;--ac:#5b8def;--low:#4da3ff;--med:#f2c744;--high:#ff9340;--crit:#ff4d5e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-theme=light]{--bg:#f4f6fb;--p:#fff;--b:#d5dbe8;--t:#1b2233;--m:#5d6783;--ac:#2f6be0;--low:#1a74d6;--med:#a87b00;--high:#c75a00;--crit:#cc1f33}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){--bg:#f4f6fb;--p:#fff;--b:#d5dbe8;--t:#1b2233;--m:#5d6783;--ac:#2f6be0;--low:#1a74d6;--med:#a87b00;--high:#c75a00;--crit:#cc1f33}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px/1.5 system-ui,"Noto Sans TC",sans-serif}
+header{padding:12px 16px;border-bottom:1px solid var(--b);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0}main{padding:16px;max-width:1200px;margin:auto}
+.note{background:var(--p);border:1px solid var(--b);border-left:4px solid var(--ac);padding:8px 12px;border-radius:6px;color:var(--m);margin:12px 0}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+button,select,input{font:inherit;color:var(--t);background:var(--p);border:1px solid var(--b);border-radius:6px;padding:6px 10px}
+button{cursor:pointer}button:hover,button.on{border-color:var(--ac)}button.on{background:var(--ac);color:#fff}
+button:focus-visible,select:focus-visible,input:focus-visible,canvas:focus-visible{outline:2px solid var(--ac)}
+#drop{border:2px dashed var(--b);border-radius:10px;padding:22px;text-align:center;color:var(--m);background:var(--p)}
+#drop.over{border-color:var(--ac)}progress{width:100%;height:8px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.card{background:var(--p);border:1px solid var(--b);border-radius:8px;padding:10px}.card b{display:block;font-size:22px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.bar>*{min-width:0}
+.tw{overflow-x:auto;background:var(--p);border:1px solid var(--b);border-radius:8px}
+table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--b);white-space:nowrap}
+th{color:var(--m);font-weight:600}tbody tr{cursor:pointer}tbody tr:hover{background:rgba(91,141,239,.12)}
+.sev{font-weight:700}.LOW{color:var(--low)}.MEDIUM{color:var(--med)}.HIGH{color:var(--high)}.CRITICAL{color:var(--crit)}
+tr.CRITICAL td:first-child{box-shadow:inset 4px 0 var(--crit)}tr.HIGH td:first-child{box-shadow:inset 4px 0 var(--high)}
+.hide{display:none}canvas{width:100%;height:420px;background:var(--p);border:1px solid var(--b);border-radius:8px;touch-action:none;cursor:grab}
+dialog{background:var(--p);color:var(--t);border:1px solid var(--b);border-radius:10px;max-width:640px;width:calc(100% - 24px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}pre{background:var(--bg);padding:10px;border-radius:6px;overflow:auto;max-height:240px;white-space:pre-wrap;word-break:break-all}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px}dt{color:var(--m)}dd{margin:0;word-break:break-all}
+</style></head><body>
+<header><h1>🛡️ MCGuard Replay Viewer</h1><span style="flex:1"></span>
+<button id="theme" aria-label="切換深色或淺色模式">🌓 主題</button></header>
+<main>
+<div class="note">這是 MCGuard 伺服器端事件取證檢視器，不是完整 Minecraft ReplayMod 播放器。資料只在你的瀏覽器處理，不會上傳。</div>
+<div id="drop" role="button" tabindex="0" aria-label="選擇或拖放 JSONL 檔案">
+拖放 .jsonl / .ndjson / .txt 到這裡，或按一下選擇檔案
+<input id="file" type="file" accept=".jsonl,.ndjson,.txt" class="hide"></div>
+<div id="pg" class="hide"><progress id="prog" value="0" max="100"></progress><div id="pgt"></div></div>
+<nav id="tabs" role="tablist"></nav>
+
+<section id="v-events">
+<div class="cards" id="cards"></div>
+<div class="bar">
+<select id="fs" aria-label="嚴重度"><option value="">嚴重度:全部</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select>
+<select id="ft" aria-label="事件類型"></select><select id="fw" aria-label="世界"></select>
+<input id="fq" placeholder="搜尋玩家 / subject" aria-label="搜尋玩家">
+<input id="fa" type="datetime-local" aria-label="起始時間"><input id="fb" type="datetime-local" aria-label="結束時間">
+<select id="so" aria-label="排序"><option value="ti">時間 ↑</option><option value="td">時間 ↓</option><option value="ii">編號 ↑</option><option value="id">編號 ↓</option></select>
+<button id="xj">匯出 JSONL</button><button id="xs">匯出 JSON</button><button id="clr">清除資料</button></div>
+<div id="cnt" style="color:var(--m)"></div>
+<div class="tw"><table><thead><tr><th>編號</th><th>嚴重度</th><th>類型</th><th>玩家 / subject</th><th>世界</th><th>座標</th><th>時間</th><th>狀態</th></tr></thead><tbody id="tb"></tbody></table></div>
+</section>
+
+<section id="v-players" class="hide"><div class="tw"><table><thead><tr><th>玩家</th><th>總數</th><th>L</th><th>M</th><th>H</th><th>C</th><th>第一次</th><th>最後</th><th>世界</th></tr></thead><tbody id="pb"></tbody></table></div></section>
+
+<section id="v-replay" class="hide">
+<div class="bar"><select id="rp" aria-label="玩家"></select>
+<button id="prv" aria-label="上一事件">⏮</button><button id="ply" aria-label="播放或暫停">▶ 播放</button><button id="nxt" aria-label="下一事件">⏭</button>
+<select id="sp" aria-label="播放速度"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>
+<button id="fit">重設視角</button><button id="xp">匯出路徑 JSON</button><button id="xt">匯出 /tp 清單</button></div>
+<input id="sl" type="range" min="0" max="0" value="0" style="width:100%" aria-label="時間軸">
+<div id="ri" style="margin:8px 0"></div>
+<canvas id="cv" tabindex="0" aria-label="X/Z 事件地圖,可拖曳與滾輪縮放"></canvas>
+</section>
+
+<section id="v-errors" class="hide"><div class="tw"><table><thead><tr><th>行</th><th>原因</th><th>內容</th></tr></thead><tbody id="eb"></tbody></table></div></section>
+<section id="v-settings" class="hide">
+<div class="note">自訂事件類型在地圖上的圖示與顏色(只存在本機瀏覽器)。要加新事件類型,在下方填入名稱即可先設定樣式。</div>
+<label><input type="checkbox" id="cfa"> 顯示 PVP 攻擊方向箭頭(以受害者最近一筆事件位置估計)</label>
+<div class="bar"><input id="cn" placeholder="事件類型,例如 FLY_SUSPECT" aria-label="事件類型名稱"><input id="ci" placeholder="圖示" size="4" maxlength="4" aria-label="圖示"><input id="cc" type="color" value="#ff9340" aria-label="顏色"><button id="cadd">新增 / 更新</button><button id="crst">重設全部</button></div>
+<div class="tw"><table><thead><tr><th>類型</th><th>圖示</th><th>顏色</th><th></th></tr></thead><tbody id="cb"></tbody></table></div></section>
+<section id="v-tests" class="hide"><div class="note">用真正的解析程式(Web Worker)在你的瀏覽器跑測試,不會動到目前載入的資料。若瀏覽器擋掉 Worker,會自動改用同一份解析程式在主執行緒執行。</div><div class="bar"><button id="trun">執行全部測試</button><strong id="tsum"></strong></div><div id="tout" role="log"></div></section>
+</main>
+<dialog id="dlg"><div id="dc"></div></dialog>
+<script>
+"use strict";
+const MAX=20000,SEV={LOW:["●","低風險,需要觀察"],MEDIUM:["▲","有可疑行為,建議查看 Replay"],HIGH:["◆","高度可疑,需要管理員審核"],CRITICAL:["⚠","極高風險,建議立即處理"]};
+const S={ev:[],err:[],f:[],pl:{},rl:[],i:0,timer:null,v:{cx:0,cz:0,s:1}};
+const $=id=>document.getElementById(id);
+function h(t,txt,cls){const e=document.createElement(t);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e}
+const fmtT=e=>e.t?new Date(e.t).toLocaleString():(e.rawT||"未知");
+const fmtC=e=>e.x==null?"未知":`${e.x.toFixed(1)}, ${e.y==null?"?":e.y.toFixed(1)}, ${e.z.toFixed(1)}`;
+const sevCell=s=>{const k=SEV[s];return k?`${k[0]} ${s}`:"未知"};
+function dl(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+
+// ---- tabs
+const TABS=[["events","事件"],["players","玩家"],["replay","Replay"],["errors","解析錯誤"],["settings","設定"],["tests","測試"]];
+TABS.forEach(([k,n])=>{const b=h("button",n);b.dataset.k=k;b.onclick=()=>tab(k);$("tabs").append(b)});
+function tab(k){TABS.forEach(([x])=>$("v-"+x).classList.toggle("hide",x!==k));[...$("tabs").children].forEach(b=>b.classList.toggle("on",b.dataset.k===k));if(k==="replay")draw();if(k==="settings")cfgView()}
+tab("events");
+$("theme").onclick=()=>{const r=document.documentElement;r.dataset.theme=(r.dataset.theme||(matchMedia("(prefers-color-scheme:light)").matches?"light":"dark"))==="dark"?"light":"dark";draw()};
+
+// ---- upload / parse
+const drop=$("drop");
+drop.onclick=()=>$("file").click();drop.onkeydown=e=>{if(e.key==="Enter"||e.key===" ")$("file").click()};
+drop.ondragover=e=>{e.preventDefault();drop.classList.add("over")};drop.ondragleave=()=>drop.classList.remove("over");
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove("over");load(e.dataTransfer.files[0])};
+$("file").onchange=e=>load(e.target.files[0]);
+async function parseCore(f,postMessage){const MAX=20000,rd=f.stream().getReader(),dec=new TextDecoder();let buf="",n=0,read=0,skip=false,out=[],err=[];const seen=new Set();
+const proc=l=>{n++;l=l.trim();if(!l)return;
+if(l.length>MAX)return err.push({n,r:"單行過長",c:l.slice(0,120)});
+let o;try{o=JSON.parse(l)}catch(x){return err.push({n,r:"JSON 格式錯誤",c:l.slice(0,120)})}
+if(!o||typeof o!=="object"||Array.isArray(o))return err.push({n,r:"不是 JSON 物件",c:l.slice(0,120)});
+out.push(norm(o,n,seen))};
+for(;;){const {done,value}=await rd.read();if(done)break;read+=value.length;buf+=dec.decode(value,{stream:true});
+const ls=buf.split("\n");buf=ls.pop();for(const l of ls){if(skip){skip=false;continue}proc(l)}
+if(buf.length>MAX){err.push({n:n+1,r:"單行過長(已略過)",c:buf.slice(0,120)});buf="";skip=true}
+postMessage({t:"p",read,n,ev:out,err});out=[];err=[]}
+buf+=dec.decode();if(buf&&!skip)proc(buf);postMessage({t:"p",read,n,ev:out,err});postMessage({t:"d"})}
+const WBODY=`const parseCore=${parseCore};onmessage=ev=>parseCore(ev.data,postMessage)`;
+async function load(f){
+  if(!f)return;
+  if(!/\.(jsonl|ndjson|txt)$/i.test(f.name)){alert("只接受 .jsonl、.ndjson、.txt");return}
+  reset();$("pg").classList.remove("hide");
+  let w,ok=false;
+  try{w=new Worker(URL.createObjectURL(new Blob([`const num=${num};const norm=${norm};${WBODY}`],{type:"text/javascript"})))}catch(x){return loadMain(f)}
+  w.onerror=()=>{w.terminate();if(!ok){ok=true;loadMain(f)}};
+  w.onmessage=m=>{const d=m.data;if(ok&&d.t==null)return;ok=true;
+    if(d.t=="p"){for(const e of d.ev)S.ev.push(e);for(const e of d.err)S.err.push(e);
+      $("prog").value=f.size?d.read/f.size*100:100;$("pgt").textContent=`${f.name} · ${(f.size/1048576).toFixed(2)} MB · ${d.n} 行(背景執行緒解析)`}
+    else{w.terminate();$("prog").value=100;$("pgt").textContent=`${f.name} · ${(f.size/1048576).toFixed(2)} MB · 成功 ${S.ev.length} 筆 · 錯誤 ${S.err.length} 行`;build();save(f)}};
+  w.postMessage(f);
+}
+async function loadMain(f){
+  reset();$("pg").classList.remove("hide");
+  const rd=f.stream().getReader(),dec=new TextDecoder();let buf="",n=0,read=0,skip=false;
+  const seen=new Set();
+  const proc=l=>{n++;l=l.trim();if(!l)return;
+    if(l.length>MAX)return S.err.push({n,r:"單行過長",c:l.slice(0,120)});
+    let o;try{o=JSON.parse(l)}catch(x){return S.err.push({n,r:"JSON 格式錯誤",c:l.slice(0,120)})}
+    if(!o||typeof o!=="object"||Array.isArray(o))return S.err.push({n,r:"不是 JSON 物件",c:l.slice(0,120)});
+    S.ev.push(norm(o,n,seen))};
+  for(;;){
+    const {done,value}=await rd.read();if(done)break;
+    read+=value.length;buf+=dec.decode(value,{stream:true});
+    const ls=buf.split("\n");buf=ls.pop();
+    for(const l of ls){if(skip){skip=false;continue}proc(l)}
+    if(buf.length>MAX){S.err.push({n:n+1,r:"單行過長(已略過)",c:buf.slice(0,120)});buf="";skip=true}
+    $("prog").value=read/f.size*100;$("pgt").textContent=`${f.name} · ${(f.size/1048576).toFixed(2)} MB · ${n} 行`;
+    await new Promise(r=>setTimeout(r));
+  }
+  buf+=dec.decode();if(buf&&!skip)proc(buf);
+  $("pgt").textContent=`${f.name} · ${(f.size/1048576).toFixed(2)} MB · 成功 ${S.ev.length} 筆 · 錯誤 ${S.err.length} 行`;
+  $("prog").value=100;build();save(f);
+}
+function num(v){const x=typeof v==="string"&&v.trim()!==""?Number(v):v;return typeof x==="number"&&isFinite(x)?x:null}
+function norm(o,line,seen){
+  const subject=o.subject==null?"":String(o.subject);
+  const pn=subject.split(/\s*->\s*/)[0].trim().slice(0,32)||"未知";
+  const id=o.eventId==null?null:String(o.eventId);
+  const rawT=o.createdAt==null?"":String(o.createdAt);const t=Date.parse(rawT);
+  const e={o,line,id,sev:String(o.severity||"").toUpperCase(),type:o.type==null?"未知":String(o.type),subject,player:pn,
+    world:o.world==null?"未知":String(o.world),x:num(o.x),y:num(o.y),z:num(o.z),t:isNaN(t)?0:t,rawT,dup:false};
+  if(e.x==null||e.z==null){e.x=e.z=null}
+  if(id!=null){if(seen.has(id))e.dup=true;seen.add(id)}
+  return e}
+function reset(){clearInterval(S.timer);S.ev=[];S.err=[];S.f=[];S.pl={};S.rl=[];S.i=0}
+$("clr").onclick=()=>{reset();build();$("pg").classList.add("hide");DB.put(null)};
+const DB={open:()=>new Promise((res,rej)=>{const r=indexedDB.open("mcguard",1);r.onupgradeneeded=()=>r.result.createObjectStore("s");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}),
+  async put(v){try{const d=await DB.open(),s=d.transaction("s","readwrite").objectStore("s");v===null?s.delete("cur"):s.put(v,"cur")}catch(x){}},
+  async get(){try{const d=await DB.open();return await new Promise(res=>{const r=d.transaction("s").objectStore("s").get("cur");r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)})}catch(x){return null}}};
+function save(f){DB.put({name:f.name,size:f.size,at:Date.now(),ev:S.ev,err:S.err})}
+DB.get().then(d=>{if(!d||!d.ev||S.ev.length)return;S.ev=d.ev;S.err=d.err||[];$("pg").classList.remove("hide");$("prog").value=100;
+  $("pgt").textContent=`已還原上次檔案:${d.name} · 成功 ${S.ev.length} 筆 · 錯誤 ${S.err.length} 行(暫存於本機瀏覽器,按「清除資料」可刪除)`;build()});
+
+// ---- build views
+function opts(sel,label,vals){sel.replaceChildren();const o=h("option",label);o.value="";sel.append(o);[...vals].sort().forEach(v=>{const x=h("option",v);x.value=v;sel.append(x)})}
+function build(){
+  const E=S.ev,c=s=>E.filter(e=>e.sev===s).length;
+  const card=(l,v)=>{const d=h("div",null,"card");d.append(h("b",String(v)),h("span",l,null));return d};
+  $("cards").replaceChildren(card("總事件",E.length),card("LOW",c("LOW")),card("MEDIUM",c("MEDIUM")),card("HIGH",c("HIGH")),card("CRITICAL",c("CRITICAL")),
+    card("玩家數",new Set(E.map(e=>e.player)).size),card("世界數",new Set(E.map(e=>e.world)).size));
+  opts($("ft"),"類型:全部",new Set(E.map(e=>e.type)));opts($("fw"),"世界:全部",new Set(E.map(e=>e.world)));
+  S.pl={};E.forEach(e=>(S.pl[e.player]??=[]).push(e));
+  const pb=$("pb");pb.replaceChildren();
+  Object.entries(S.pl).sort((a,b)=>b[1].length-a[1].length).slice(0,500).forEach(([p,l])=>{
+    const ts=l.map(e=>e.t).filter(Boolean),r=h("tr");
+    [p,l.length,...["LOW","MEDIUM","HIGH","CRITICAL"].map(s=>l.filter(e=>e.sev===s).length),
+     ts.length?new Date(Math.min(...ts)).toLocaleString():"未知",ts.length?new Date(Math.max(...ts)).toLocaleString():"未知",[...new Set(l.map(e=>e.world))].join(", ")]
+     .forEach(v=>r.append(h("td",String(v))));
+    r.onclick=()=>openReplay(p);pb.append(r)});
+  const eb=$("eb");eb.replaceChildren();
+  S.err.slice(0,1000).forEach(x=>{const r=h("tr");r.append(h("td",String(x.n)),h("td",x.r),h("td",x.c));eb.append(r)});
+  $("tabs").children[3].textContent=`解析錯誤 (${S.err.length})`;
+  opts($("rp"),"全部事件",Object.keys(S.pl));
+  filter();
+}
+function filter(){
+  const s=$("fs").value,t=$("ft").value,w=$("fw").value,q=$("fq").value.toLowerCase(),
+    a=$("fa").value?Date.parse($("fa").value):0,b=$("fb").value?Date.parse($("fb").value):Infinity,so=$("so").value;
+  let f=S.ev.filter(e=>(!s||e.sev===s)&&(!t||e.type===t)&&(!w||e.world===w)&&(!q||e.subject.toLowerCase().includes(q)||e.player.toLowerCase().includes(q))&&(!e.t&&!$("fa").value&&!$("fb").value||e.t>=a&&e.t<=b));
+  const k={ti:(x,y)=>x.t-y.t,td:(x,y)=>y.t-x.t,ii:(x,y)=>(parseFloat(x.id)||0)-(parseFloat(y.id)||0),id:(x,y)=>(parseFloat(y.id)||0)-(parseFloat(x.id)||0)}[so];
+  S.f=f.sort(k);
+  $("cnt").textContent=`符合 ${S.f.length} / ${S.ev.length} 筆${S.f.length>500?"(表格僅顯示前 500 筆,匯出為全部)":""}`;
+  const tb=$("tb");tb.replaceChildren();
+  S.f.slice(0,500).forEach(e=>{
+    const r=h("tr",null,e.sev);r.tabIndex=0;
+    const sc=h("td",sevCell(e.sev),"sev "+e.sev);
+    const sj=h("td",e.subject.length>40?e.subject.slice(0,40)+"…":e.subject||"未知");
+    r.append(h("td",e.id??"未知"),sc,h("td",e.type),sj,h("td",e.world),h("td",fmtC(e)),h("td",fmtT(e)),h("td",e.dup?"重複編號":"正常"));
+    r.onclick=()=>detail(e);r.onkeydown=ev=>{if(ev.key==="Enter")detail(e)};tb.append(r)});
+}
+["fs","ft","fw","so"].forEach(i=>$(i).onchange=filter);["fq","fa","fb"].forEach(i=>$(i).oninput=filter);
+const jl=l=>l.map(e=>JSON.stringify(e.o)).join("\n");
+$("xj").onclick=()=>dl("mcguard-filtered.jsonl",jl(S.f));$("xs").onclick=()=>dl("mcguard-filtered.json",JSON.stringify(S.f.map(e=>e.o),null,2));
+
+// ---- detail
+function detail(e){
+  const d=$("dc");d.replaceChildren();d.append(h("h2",`事件 ${e.id??"未知"}`));
+  const l=h("dl");
+  [["嚴重度",`${sevCell(e.sev)}${SEV[e.sev]?" — "+SEV[e.sev][1]:""}`],["類型",e.type],["玩家",e.player],["世界",e.world],["座標",fmtC(e)],["時間",fmtT(e)],["Subject",e.subject||"未知"]].forEach(([a,b])=>l.append(h("dt",a),h("dd",b)));
+  d.append(l);d.append(h("pre",JSON.stringify(e.o,null,2)));
+  const same=S.pl[e.player]||[],i=same.indexOf(e),bar=h("div",null,"bar");
+  const B=(t,fn)=>{const b=h("button",t);b.onclick=fn;bar.append(b)};
+  if(same[i-1])B("← 同玩家上一筆",()=>detail(same[i-1]));
+  if(same[i+1])B("同玩家下一筆 →",()=>detail(same[i+1]));
+  B("複製 JSON",()=>navigator.clipboard?.writeText(JSON.stringify(e.o,null,2)));
+  B("複製摘要",()=>navigator.clipboard?.writeText(`[${e.sev}] ${e.type} ${e.player} @ ${e.world} ${fmtC(e)} ${fmtT(e)}`));
+  B("下載事件",()=>dl(`event-${e.id??e.line}.json`,JSON.stringify(e.o,null,2)));
+  B("匯出此玩家事件",()=>dl(`player-${e.player}.jsonl`,jl(same)));
+  B("在 Replay 查看",()=>{$("dlg").close();openReplay(e.player,e)});
+  B("關閉",()=>$("dlg").close());
+  d.append(bar);$("dlg").showModal();
+}
+
+// ---- replay
+function openReplay(p,e){$("rp").value=p;setRl(e);tab("replay")}
+$("rp").onchange=()=>setRl();
+function setRl(start){
+  stop();const p=$("rp").value;
+  S.rl=(p?S.pl[p]:S.ev).filter(e=>e.x!=null).slice().sort((a,b)=>a.t-b.t);
+  S.i=Math.max(0,S.rl.indexOf(start));$("sl").max=Math.max(0,S.rl.length-1);fit();show();
+}
+function fit(){
+  const l=S.rl;if(!l.length){S.v={cx:0,cz:0,s:1};return draw()}
+  const xs=l.map(e=>e.x),zs=l.map(e=>e.z),c=$("cv"),w=c.clientWidth||600,hh=c.clientHeight||420;
+  const x0=Math.min(...xs),x1=Math.max(...xs),z0=Math.min(...zs),z1=Math.max(...zs);
+  S.v={cx:(x0+x1)/2,cz:(z0+z1)/2,s:Math.min(w/Math.max(x1-x0,20),hh/Math.max(z1-z0,20))*.8};draw();
+}
+function show(){
+  const e=S.rl[S.i],r=$("ri");
+  if(!e){r.textContent="沒有可顯示座標的事件";draw();return}
+  $("sl").value=S.i;
+  r.textContent=`${S.i+1}/${S.rl.length} · ${sevCell(e.sev)} · ${e.type} · ${e.player} · ${e.world} · X ${e.x.toFixed(1)} Y ${e.y==null?"?":e.y.toFixed(1)} Z ${e.z.toFixed(1)} · ${fmtT(e)}`;
+  draw();
+}
+function stop(){clearInterval(S.timer);S.timer=null;$("ply").textContent="▶ 播放"}
+function step(d){S.i=Math.min(S.rl.length-1,Math.max(0,S.i+d));show()}
+$("prv").onclick=()=>step(-1);$("nxt").onclick=()=>step(1);$("fit").onclick=fit;
+$("sl").oninput=e=>{S.i=+e.target.value;show()};
+$("ply").onclick=()=>{
+  if(S.timer)return stop();if(!S.rl.length)return;
+  if(S.i>=S.rl.length-1)S.i=0;$("ply").textContent="⏸ 暫停";
+  const tick=()=>{if(S.i>=S.rl.length-1)return stop();step(1);S.timer=setTimeout(tick,1000/+$("sp").value)};
+  S.timer=setTimeout(tick,1000/+$("sp").value);
+};
+const CFG=(()=>{try{return JSON.parse(localStorage.getItem("mcg-cfg"))||{}}catch(x){return{}}})();CFG.types??={};CFG.arrows??=true;
+const saveCfg=()=>{try{localStorage.setItem("mcg-cfg",JSON.stringify(CFG))}catch(x){}};
+function ico(t){const c=CFG.types[t];if(c&&c.i)return c.i;t=t.toUpperCase();return t.includes("XRAY")?"💎":t.includes("PVP")||t.includes("REACH")?"✕":"●"}
+const ORE=/diamond|ancient[_ ]?debris|emerald|gold|iron|redstone|lapis|coal|copper|netherite|鑽石|金|鐵|紅石|青金石|煤|銅|綠寶石/i;
+function arrow(g,x0,y0,x1,y1,c){const a=Math.atan2(y1-y0,x1-x0);g.strokeStyle=c;g.fillStyle=c;g.lineWidth=1.5;g.beginPath();g.moveTo(x0,y0);g.lineTo(x1,y1);g.stroke();g.beginPath();g.moveTo(x1,y1);g.lineTo(x1-9*Math.cos(a-.4),y1-9*Math.sin(a-.4));g.lineTo(x1-9*Math.cos(a+.4),y1-9*Math.sin(a+.4));g.fill()}
+function draw(){
+  const c=$("cv"),dpr=devicePixelRatio||1,w=c.clientWidth,hh=c.clientHeight;if(!w)return;
+  c.width=w*dpr;c.height=hh*dpr;const g=c.getContext("2d");g.scale(dpr,dpr);
+  const cs=getComputedStyle(document.documentElement),col=n=>cs.getPropertyValue(n).trim();
+  const {cx,cz,s}=S.v,X=x=>(x-cx)*s+w/2,Z=z=>(z-cz)*s+hh/2;
+  g.fillStyle=col("--p");g.fillRect(0,0,w,hh);
+  g.strokeStyle=col("--b");g.fillStyle=col("--m");g.font="11px system-ui";g.lineWidth=1;
+  const gs=Math.pow(10,Math.ceil(Math.log10(60/s)));
+  for(let x=Math.floor((cx-w/2/s)/gs)*gs;X(x)<w;x+=gs){g.beginPath();g.moveTo(X(x),0);g.lineTo(X(x),hh);g.stroke();g.fillText(x,X(x)+2,10)}
+  for(let z=Math.floor((cz-hh/2/s)/gs)*gs;Z(z)<hh;z+=gs){g.beginPath();g.moveTo(0,Z(z));g.lineTo(w,Z(z));g.stroke();g.fillText(z,2,Z(z)-2)}
+  const cur=S.rl[S.i];if(!cur)return;
+  const l=S.rl.filter(e=>e.world===cur.world);
+  g.strokeStyle=col("--ac");g.lineWidth=2;g.beginPath();l.forEach((e,i)=>i?g.lineTo(X(e.x),Z(e.z)):g.moveTo(X(e.x),Z(e.z)));g.stroke();
+  g.font="14px system-ui";g.textAlign="center";g.textBaseline="middle";
+  if(CFG.arrows)l.forEach(e=>{const a=e.subject.split(/\s*->\s*/);if(a.length<2||!/PVP/i.test(e.type))return;const v=(S.pl[a[1].trim().slice(0,32)]||[]).filter(q=>q.world===e.world&&q.x!=null&&q!==e);if(!v.length)return;const q=v.reduce((b,y)=>Math.abs(y.t-e.t)<Math.abs(b.t-e.t)?y:b);arrow(g,X(e.x),Z(e.z),X(q.x),Z(q.z),col("--crit"))});
+  g.font="14px system-ui";
+  l.forEach(e=>{const c=CFG.types[e.type];g.fillStyle=c&&c.c?c.c:col({LOW:"--low",MEDIUM:"--med",HIGH:"--high",CRITICAL:"--crit"}[e.sev]||"--m");g.fillText(ico(e.type),X(e.x),Z(e.z));
+    if(/XRAY/i.test(e.type)){const m=ORE.exec(e.subject);if(m){g.font="11px system-ui";g.fillText(m[0],X(e.x)+16,Z(e.z)-10);g.font="14px system-ui"}}});
+  g.strokeStyle=col("--t");g.lineWidth=2;g.beginPath();g.arc(X(cur.x),Z(cur.z),11,0,7);g.stroke();
+  g.textAlign="left";g.fillStyle=col("--m");g.fillText(`世界: ${cur.world} · 縮放 ${s.toFixed(2)} px/格`,8,hh-10);
+}
+(()=>{const c=$("cv");let d=null,pts=new Map();
+  c.onpointerdown=e=>{c.setPointerCapture(e.pointerId);d={x:e.clientX,z:e.clientY,m:false}};
+  c.onpointermove=e=>{if(!d)return;const dx=e.clientX-d.x,dz=e.clientY-d.z;if(Math.abs(dx)+Math.abs(dz)>3)d.m=true;S.v.cx-=dx/S.v.s;S.v.cz-=dz/S.v.s;d.x=e.clientX;d.z=e.clientY;draw()};
+  c.onpointerup=e=>{if(d&&!d.m){const r=c.getBoundingClientRect(),mx=(e.clientX-r.left-r.width/2)/S.v.s+S.v.cx,mz=(e.clientY-r.top-r.height/2)/S.v.s+S.v.cz;
+    let b=-1,bd=(14/S.v.s)**2;S.rl.forEach((v,i)=>{const q=(v.x-mx)**2+(v.z-mz)**2;if(q<bd){bd=q;b=i}});if(b>=0){S.i=b;show()}}d=null};
+  c.onwheel=e=>{e.preventDefault();S.v.s*=e.deltaY<0?1.15:1/1.15;draw()};
+  addEventListener("resize",draw);
+  c.onkeydown=e=>{const k=e.key;if(k==="ArrowLeft")step(-1);else if(k==="ArrowRight")step(1);else if(k==="+")S.v.s*=1.2;else if(k==="-")S.v.s/=1.2;else if(k===" "){e.preventDefault();$("ply").click()}draw()};
+})();
+$("xp").onclick=()=>dl("mcguard-path.json",JSON.stringify(S.rl.map(e=>({id:e.id,player:e.player,type:e.type,severity:e.sev,world:e.world,x:e.x,y:e.y,z:e.z,time:e.rawT})),null,2));
+$("xt").onclick=()=>dl("mcguard-tp.txt",S.rl.map(e=>`# ${e.rawT} ${e.type}\ntp @s ${e.x} ${e.y??64} ${e.z}`).join("\n"));
+function cfgView(){$("cfa").checked=CFG.arrows;const ts=new Set([...S.ev.map(e=>e.type),...Object.keys(CFG.types)]),cb=$("cb");cb.replaceChildren();
+  [...ts].sort().forEach(t=>{const c=CFG.types[t]||{},r=h("tr"),i=h("input"),k=h("input");
+    i.value=c.i||ico(t);i.size=4;i.maxLength=4;i.setAttribute("aria-label",t+" 圖示");k.type="color";k.value=c.c||"#8e98b3";k.setAttribute("aria-label",t+" 顏色");
+    const ap=()=>{CFG.types[t]={i:i.value,c:k.value};saveCfg();draw()};i.oninput=ap;k.oninput=ap;
+    const d=h("button","還原");d.onclick=()=>{delete CFG.types[t];saveCfg();cfgView();draw()};
+    const a=h("td"),b=h("td"),z=h("td");a.append(i);b.append(k);z.append(d);r.append(h("td",t),a,b,z);cb.append(r)})}
+$("cfa").onchange=e=>{CFG.arrows=e.target.checked;saveCfg();draw()};
+$("cadd").onclick=()=>{const n=$("cn").value.trim().slice(0,40);if(!n)return;CFG.types[n]={i:$("ci").value||"●",c:$("cc").value};saveCfg();$("cn").value="";cfgView();draw()};
+$("crst").onclick=()=>{CFG.types={};CFG.arrows=true;saveCfg();cfgView();draw()};
+const ok=(c,m)=>{if(!c)throw new Error(m||"斷言失敗")};
+const eq=(a,b,m)=>ok(a===b,(m||"")+" 預期 "+b+",實際 "+a);
+const J=o=>JSON.stringify(o);
+function wparse(text){return new Promise((res,rej)=>{const ev=[],err=[],f=new File([text],"t.jsonl");let W="Worker",w,fb=false;
+  const on=d=>{if(d.t=="p"){for(const e of d.ev)ev.push(e);for(const e of d.err)err.push(e)}else res({ev,err,mode:W})};
+  const fall=()=>{if(fb)return;fb=true;W="main";ev.length=err.length=0;parseCore(f,on).catch(rej)};
+  try{w=new Worker(URL.createObjectURL(new Blob([`const num=${num};const norm=${norm};${WBODY}`],{type:"text/javascript"})))}catch(x){return fall()}
+  w.onerror=()=>{w.terminate();fall()};
+  w.onmessage=m=>{if(m.data.t=="d")w.terminate();on(m.data)};
+  w.postMessage(f)})}
+const TESTS=[
+["正常 JSONL",async()=>{const r=await wparse(J({eventId:12,severity:"LOW",type:"LOW_PVP",subject:"Steve -> Alex",world:"world",x:120.5,y:64,z:-32.2,createdAt:"2026-11-22T12:55:00Z"}));eq(r.ev.length,1);eq(r.err.length,0);const e=r.ev[0];eq(e.id,"12");eq(e.sev,"LOW");eq(e.player,"Steve");eq(e.x,120.5);ok(e.t>0,"時間應可解析")}],
+["多行 JSONL(含空行與 CRLF)",async()=>{const r=await wparse([1,2,3].map(i=>J({eventId:i,severity:"LOW"})).join("\r\n\r\n"));eq(r.ev.length,3);eq(r.err.length,0)}],
+["空檔案",async()=>{const r=await wparse("");eq(r.ev.length,0);eq(r.err.length,0)}],
+["缺少欄位顯示「未知」",async()=>{const e=(await wparse("{}")).ev[0];eq(e.type,"未知");eq(e.world,"未知");eq(e.player,"未知");eq(e.x,null);eq(e.id,null)}],
+["JSON 錯誤與非物件不中斷",async()=>{const r=await wparse("{bad\n[1,2]\n"+J({eventId:1}));eq(r.ev.length,1);eq(r.err.length,2);eq(r.err[0].n,1)}],
+["無效座標",async()=>{const r=await wparse(J({x:"abc",y:1,z:2})+'\n{"x":1e999,"z":5}');eq(r.ev[0].x,null);eq(r.ev[1].x,null);eq(r.ev[1].z,null)}],
+["重複 eventId",async()=>{const r=await wparse(J({eventId:7})+"\n"+J({eventId:7}));eq(r.ev[0].dup,false);eq(r.ev[1].dup,true)}],
+["超大 subject",async()=>{const a=await wparse(J({eventId:1,subject:"a".repeat(5000)}));eq(a.ev.length,1);const b=await wparse(J({eventId:2,subject:"a".repeat(30000)})+"\n"+J({eventId:3}));eq(b.ev.length,1);eq(b.err.length,1);eq(b.ev[0].id,"3")}],
+["惡意 HTML / Script 不會被執行",async()=>{const s='<img src=x onerror=alert(1)><script>alert(1)<\/script>';const r=await wparse(J({eventId:1,severity:"HIGH",type:s,subject:s+" -> x",world:s,x:1,y:2,z:3}));detail(r.ev[0]);const bad=$("dc").querySelector("script,img,[onerror]");$("dlg").close();ok(!bad,"詳情內出現了 HTML 元素");ok(r.ev[0].subject.includes("<img"),"原文應保留為文字")}],
+["10000 筆以上事件",async()=>{const t=Array.from({length:12000},(_,i)=>J({eventId:i,severity:["LOW","MEDIUM","HIGH","CRITICAL"][i%4],type:"T"+i%5,subject:"P"+i%50+" -> Q",world:i%2?"world":"nether",x:i,y:64,z:-i,createdAt:new Date(1.7e12+i*1000).toISOString()})).join("\n");const r=await wparse(t);eq(r.ev.length,12000);eq(r.err.length,0);eq(new Set(r.ev.map(e=>e.player)).size,50)}],
+["多玩家與多世界",async()=>{const r=await wparse([["A","w1"],["B","w2"],["C","w1"]].map(([p,w],i)=>J({eventId:i,subject:p+" -> X",world:w})).join("\n"));eq(new Set(r.ev.map(e=>e.player)).size,3);eq(new Set(r.ev.map(e=>e.world)).size,2)}],
+["LOW / MEDIUM / HIGH / CRITICAL 混合",async()=>{const r=await wparse(["LOW","MEDIUM","HIGH","CRITICAL","high"].map((s,i)=>J({eventId:i,severity:s})).join("\n"));const c=s=>r.ev.filter(e=>e.sev===s).length;eq(c("LOW"),1);eq(c("MEDIUM"),1);eq(c("HIGH"),2);eq(c("CRITICAL"),1)}]
+];
+$("trun").onclick=async()=>{const out=$("tout");out.replaceChildren();let p=0;$("tsum").textContent="執行中…";
+  for(const [n,f] of TESTS){const t=performance.now();let msg="";try{await f();p++}catch(x){msg=" — "+x.message}
+    out.append(h("div",`${msg?"❌":"✅"} ${n} (${Math.round(performance.now()-t)}ms)${msg}`))}
+  $("tsum").textContent=`通過 ${p} / ${TESTS.length}`};
+</script></body></html>
